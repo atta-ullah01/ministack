@@ -1,0 +1,24 @@
+#ifndef UTILS_H
+#define UTILS_H
+
+#include <stdio.h>
+
+
+#define log_error(...)  log_print(stderr, 'E', __FILE__, __func__, __LINE__, __VA_ARGS__)
+#define log_warn(...)	log_print(stderr, 'W', __FILE__, __func__, __LINE__, __VA_ARGS__)
+#define log_info(...)	log_print(stderr, 'I', __FILE__, __func__, __LINE__, __VA_ARGS__)
+#define log_debug(...)	log_print(stderr, 'D', __FILE__, __func__, __LINE__, __VA_ARGS__)
+
+#ifdef DEBUG
+#define debug_dump(...) hexdump(stderr, __VA_ARGS__)
+#else
+#define debug_dump(...)
+#endif
+
+extern int
+log_print(FILE *stream, char level, const char *file, const char *func, int line, const char*, ...); 
+
+extern void
+hexdump(FILE *stream, void *data, size_t len);
+
+#endif
