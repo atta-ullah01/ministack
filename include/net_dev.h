@@ -17,6 +17,7 @@
 
 #define NET_DEV_STATE(x)	x & NET_DEV_FLAG_UP ? "up": "down"
 
+#define NET_IRQ_SHARED 0x0001
 
 struct net_dev {
 	struct net_dev *next;
