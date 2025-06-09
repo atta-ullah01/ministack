@@ -21,4 +21,25 @@ log_print(FILE *stream, char level, const char *file, const char *func, int line
 extern void
 hexdump(FILE *stream, void *data, size_t len);
 
+struct queue_node;
+
+struct queue
+{
+	struct queue_node *head;
+	struct queue_node *tail;
+	size_t size;
+};
+
+extern void
+queue_init(struct queue *que);
+
+extern void
+queue_push(struct queue *que, void *data);
+
+extern void *
+queue_pop(struct queue *que);
+
+extern void *
+queue_peek(struct queue *que);
+
 #endif

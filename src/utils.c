@@ -1,8 +1,9 @@
+#include <ctype.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <time.h>
+#include <stdlib.h>
 #include <sys/time.h>
-#include <ctype.h>
+#include <time.h>
 
 #include "utils.h"
 
@@ -21,7 +22,7 @@ log_print(FILE *stream, const char level, const char *file, const char *func, co
 	n += fprintf(stream, "%s.%03d [%c] %s:", timestamp, (int)tv.tv_usec / 1000, level, func);
 	va_list va;
 	va_start(va, fmt);
-	n += fprintf(stream, fmt, va);
+	n += vfprintf(stream, fmt, va);
 	va_end(va);
 	n += fprintf(stream, " (%s:%d)\n", file, line);
 	funlockfile(stream);
@@ -57,4 +58,57 @@ hexdump(FILE *stream, void *data, size_t len)
 	}
 	fprintf(stream, "+------+-------------------------------------------------+------------------+\n");
 	funlockfile(stream);
+}
+
+
+
+static struct queue_node
+{
+	struct queue_node *next;
+	void *data;
+};
+
+void queue_init(struct queue *que)
+{
+	que->head = NULL;
+	que->tail = NULL;
+	que->size = 0;
+}
+
+void queue_push(struct queue *que, void *data)
+{
+	struct queue_node *entry = malloc(sizeof(*entry));
+	entry->data = data;
+	entry->next = NULL;
+	if (que->size == 0) {
+		que->head = entry;
+		que->tail = entry;
+	} else {
+		que->tail->next = entry;
+		que->tail = entry;
+	}
+	++que->size;
+}
+
+void *queue_pop(struct queue *que) {
+	if (que->size == 0)
+		return NULL;
+	struct queue_node *old_head = que->head;
+	void *data = old_head->data;
+	if (que->size == 1) {
+		que->head = NULL;
+		que->tail = NULL;
+	} else {
+		que->head = que->head->next;
+	}
+	free(old_head);
+	--que->size;
+	return data;
+}
+
+void *queue_peek(struct queue *que)
+{
+	if (que->size == 0)
+		return NULL;
+	return que->head->data;
 }

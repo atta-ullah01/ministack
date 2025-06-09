@@ -15,16 +15,17 @@ BUILD_DIR := build
 
 # Source and Object files
 SRCS := $(wildcard $(SRC_DIR)/*.c) \
-	$(wildcard $(DRIVER_DIR)/*.c) \
-	$(wildcard $(TEST_DIR)/*.c)
+	$(wildcard $(DRIVER_DIR)/*.c)
 
 OBJS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(SRCS))
 
-TARGET := test01
+TARGET := test02
+TAR_SRCS := $(wildcard $(TEST_DIR)/$(TARGET).c)
+TAR_OBJS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(TAR_SRCS))
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS)
+$(TARGET): $(OBJS) $(TAR_OBJS)
 	$(CC) $(CFLAGS) $^ -o $@ 
 
 $(BUILD_DIR)/%.o: %.c

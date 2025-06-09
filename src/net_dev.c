@@ -3,15 +3,15 @@
 #include <string.h>
 
 #include "net_dev.h"
+#include "net_irq.h"
 #include "utils.h"
-
 
 static struct net_dev *devices;
 
 struct net_dev *
 net_dev_alloc()
 {
-	void *dev = malloc(sizeof(*dev));
+	struct net_dev *dev = malloc(sizeof(*dev));
 	if (!dev) {
 		log_error(strerror(errno));
 		return NULL;
@@ -30,7 +30,7 @@ net_dev_register(struct net_dev *dev)
 	dev->next = devices;
 	devices = dev;
 	++index;
-	log_info("registered, dev=%s, type=%s", dev->name, dev->type);
+	log_info("registered, dev=%s, type=%d", dev->name, dev->type);
 	return 0;
 }
 
@@ -68,7 +68,7 @@ net_dev_close(struct net_dev *dev)
 }
 
 int
-net_dev_output(struct net_dev *dev, void *data, const size_t len, const void *dst)
+net_dev_output(struct net_dev *dev, void *data, const size_t len, uint16_t type, const void *dst)
 {
 	if (~dev->flags & NET_DEV_FLAG_UP) {
 		log_error("not opened, dev=%s", dev->name);
@@ -80,7 +80,7 @@ net_dev_output(struct net_dev *dev, void *data, const size_t len, const void *ds
 		return -1;
 	}
 	debug_dump(data, len);
-	if (dev->ops->transmit(dev, data, len, dst) == -1) {
+	if (dev->ops->transmit(dev, data, len, type, dst) == -1) {
 		log_error("device transmit failure, dev=%s, len=%zu", dev->name, len);
 		return -1;
 	}
@@ -96,10 +96,23 @@ net_input_handler(struct net_dev *dev, void *data, const size_t len)
 	return 0;
 }
 
+int
+net_init()
+{
+	if (irq_init() < 0) {
+		return -1;
+	}
+	log_info("initialized");
+	return 0;
+}
 
 int
 net_run()
 {
+	if (irq_run() < 0) {
+		log_error("irq_run() failure");
+		return -1;
+	}
 	log_debug("open all devices...");
 	struct net_dev *dev;
 	for (dev = devices; dev; dev = dev->next) {
@@ -113,19 +126,12 @@ net_run()
 int
 net_shutdown()
 {
+	irq_shutdown();
 	struct net_dev *dev;
 	log_debug("close all devices...");
 	for (dev = devices; dev; dev = dev->next) {
 		net_dev_close(dev);
 	}
 	log_debug("shutting down");
-	return 0;
-}
-
-
-int
-net_init()
-{
-	log_info("initialized");
 	return 0;
 }

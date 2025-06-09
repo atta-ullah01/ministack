@@ -2,7 +2,7 @@
 #include <signal.h>
 #include <unistd.h>
 
-#include "dummy.h"
+#include "loopback.h"
 #include "net_dev.h"
 #include "utils.h"
 
@@ -10,7 +10,6 @@ bool terminate = 0;
 void on_signal(int signum) {
 	net_shutdown();
 	terminate = 1;
-
 }
 
 int
@@ -19,7 +18,7 @@ main(int argc, char *argv[])
 	signal(SIGINT, on_signal);
 	struct net_dev *dev;
 	net_init();
-	dev = dummy_init();
+	dev = loopback_init();
 	if (!dev) {
 		return -1;
 	}
@@ -38,3 +37,4 @@ main(int argc, char *argv[])
 	}
 	net_shutdown();
 }
+

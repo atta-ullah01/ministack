@@ -1,7 +1,10 @@
 #ifndef NET_IRQ_H
 #define NET_IRQ_H
 
-#define IRQ_NAM_SZ 16
+#include <signal.h>
+
+#define IRQ_BASE	(SIGRTMIN + 1)
+#define IRQ_NAM_SZ	16
 
 struct irq_entry {
 	struct irq_entry *next;
@@ -12,20 +15,19 @@ struct irq_entry {
 	void *dev;
 };
 
-int
+extern int
 irq_register(unsigned int irq, int (*handler)(unsigned int irq, void *dev), unsigned int flags, const char *name, void *dev);
 
-int
+extern int
 irq_init(void);
 
-int
+extern int
 irq_run(void);
 
-void
+extern void
 irq_shutdown(void);
 
-int
+extern int
 irq_raise(int irq);
-
 
 #endif

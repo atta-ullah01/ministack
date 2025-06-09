@@ -28,7 +28,7 @@ irq_register(unsigned int irq, int (*handler)(unsigned int irq, void *dev), unsi
 	}
 	ir = malloc(sizeof(*ir));
 	if (!ir) {
-		log_error(strerror(errno));
+		log_error("irq_register: %s", strerror(errno));
 		return -1;
 	}
 	ir->irq = irq;
@@ -56,9 +56,10 @@ irq_init(void)
 }
 
 static void *
-irq_th_routine(void *arg)
+irq_routine(void *arg)
 {
 	short terminate = 0;
+	pthread_barrier_wait(&barrier);
 	while (!terminate) {
 		int sig;
 		sigwait(&sigmask, &sig);
@@ -69,7 +70,7 @@ irq_th_routine(void *arg)
 			default:
 				for (struct irq_entry *en = irqs; en; en = en->next) {
 					if ((unsigned int)sig == en->irq) {
-						log_debug("irq=%s, name=%s", en->irq, en->name);
+						log_debug("irq=%u, name=%s", en->irq, en->name);
 						en->handler(en->irq, en->dev);
 					}
 				}
@@ -87,7 +88,7 @@ irq_run(void)
 		log_error("pthread_sigmask: %s", strerror(errno));
 		return -1;
 	}
-	if (pthread_create(&tid, NULL, irq_th_routine, NULL) != 0) {
+	if (pthread_create(&tid, NULL, irq_routine, NULL) != 0) {
 		log_error("pthread_create: %s", strerror(errno));
 		return -1;
 	}
