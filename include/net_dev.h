@@ -20,6 +20,8 @@
 
 #define NET_IRQ_SHARED 0x0001
 
+#define NET_PROT_TYPE_IP 0x0800
+
 struct net_dev {
 	struct net_dev *next;
 	unsigned int index;
@@ -61,7 +63,10 @@ extern int
 net_dev_output(struct net_dev *dev, void *data, const size_t len, uint16_t type, const void *dst);
 
 extern int
-net_input_handler(struct net_dev *dev, void *data, const size_t len);
+net_protocol_register(uint16_t type, void (*handler)(const uint8_t *data, size_t len, struct net_dev *dev));
+
+extern int
+net_input_handler(struct net_dev *dev, void *data, const size_t len, uint16_t type);
 
 extern int
 net_run();

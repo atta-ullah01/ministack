@@ -44,7 +44,7 @@ loopback_isr(unsigned int irq, void *dev)
 		struct loopback_queue_entry *entry = queue_pop(&lo->queue);
 		log_debug("queue popped (num:%d), dev=%s, type=0x%04x, len=%zd", lo->queue.size, ldev->name, entry->type, entry->len);
 		debug_dump(entry->data, entry->len);
-		net_input_handler(ldev, entry->data, entry->len);
+		net_input_handler(ldev, entry->data, entry->len, entry->type);
 		free(entry);
 	}
 	pthread_mutex_unlock(&lo->mutex);

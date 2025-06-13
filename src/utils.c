@@ -62,7 +62,7 @@ hexdump(FILE *stream, void *data, size_t len)
 
 
 
-static struct queue_node
+struct queue_node
 {
 	struct queue_node *next;
 	void *data;

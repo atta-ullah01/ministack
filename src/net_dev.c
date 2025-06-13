@@ -2,11 +2,28 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "ip.h"
 #include "net_dev.h"
 #include "net_irq.h"
 #include "utils.h"
 
+struct net_protocol
+{
+	struct net_protocol *next;
+	uint16_t type;
+	void (*handler) (const uint8_t *data, size_t len, struct net_dev *dev);
+	struct queue queue;
+};
+
+struct net_protocol_queue_entry
+{
+	struct net_dev *dev;
+	size_t len;
+	uint8_t data[];
+};
+
 static struct net_dev *devices;
+static struct net_protocol *protocols;
 
 struct net_dev *
 net_dev_alloc()
@@ -89,20 +106,65 @@ net_dev_output(struct net_dev *dev, void *data, const size_t len, uint16_t type,
 
 
 int
-net_input_handler(struct net_dev *dev, void *data, const size_t len) 
+net_input_handler(struct net_dev *dev, void *data, const size_t len, uint16_t type) 
 {
-	log_debug("dev=%s, len=%zu", dev->name, len);
-	debug_dump(data, len);
-	return 0;
+	struct net_protocol *prot;
+	struct net_protocol_queue_entry *entry;
+	for (prot = protocols; prot; prot = prot->next) {
+		if (prot->type == type) {
+			entry = malloc(sizeof(*entry) + len);
+			if (!entry) {
+				log_error(strerror(errno));
+				return -1;
+			}
+			entry->dev = dev;
+			entry->len = len;
+			memcpy(entry + 1, data, len);
+			queue_push(&prot->queue, entry);
+			log_debug("queue pushed, dev=%s, type=0x%04x, len=%zu", dev->name, type, len);
+			debug_dump(data, len);
+			return 0;
+		}
+	}
+	log_error("unsupported protocol, type=0x%04x", type);
+	return -1;
 }
 
 int
 net_init()
 {
 	if (irq_init() < 0) {
+		log_error("irq_init() failure");
+		return -1;
+	}
+	if (ip_init() < 0) {
+		log_error("ip_init() failure");
 		return -1;
 	}
 	log_info("initialized");
+	return 0;
+}
+
+int
+net_protocol_register(uint16_t type, void (*handler)(const uint8_t *data, size_t len, struct net_dev *dev))
+{
+	struct net_protocol *prot;
+	for (prot = protocols; prot; prot = prot->next) {
+		if (prot->type == type) {
+			log_error("protocol already registered, type=0x%04x", type);
+			return -1;
+		}
+	}
+	prot = malloc(sizeof(*prot));
+	if (!prot) {
+		log_error(strerror(errno));
+		return -1;
+	}
+	prot->type = type;
+	prot->handler = handler;
+	prot->next = protocols;
+	protocols = prot;
+	log_info("registered protocol, type=0x%04x", type);
 	return 0;
 }
 

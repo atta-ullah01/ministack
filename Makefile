@@ -19,7 +19,7 @@ SRCS := $(wildcard $(SRC_DIR)/*.c) \
 
 OBJS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(SRCS))
 
-TARGET := test02
+TARGET := test03
 TAR_SRCS := $(wildcard $(TEST_DIR)/$(TARGET).c)
 TAR_OBJS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(TAR_SRCS))
 
