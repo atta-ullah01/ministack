@@ -123,6 +123,7 @@ net_input_handler(struct net_dev *dev, void *data, const size_t len, uint16_t ty
 			queue_push(&prot->queue, entry);
 			log_debug("queue pushed, dev=%s, type=0x%04x, len=%zu", dev->name, type, len);
 			debug_dump(data, len);
+			irq_soft_raise();
 			return 0;
 		}
 	}
@@ -165,6 +166,22 @@ net_protocol_register(uint16_t type, void (*handler)(const uint8_t *data, size_t
 	prot->next = protocols;
 	protocols = prot;
 	log_info("registered protocol, type=0x%04x", type);
+	return 0;
+}
+
+int
+net_protocol_handler(void)
+{
+	struct net_protocol *prot;
+	for (prot = protocols; prot; prot = prot->next) {
+		struct net_protocol_queue_entry *entry;
+		while ((entry = queue_pop(&prot->queue))) {
+			log_debug("queue popped (size:%zu), dev=%s, type=0x%04x, len=%zu", prot->queue.size, entry->dev->name, prot->type, entry->len);
+			debug_dump((uint8_t *)(entry + 1), entry->len);
+			prot->handler((uint8_t *)(entry + 1), entry->len, entry->dev);
+			free(entry);
+		}
+	}
 	return 0;
 }
 

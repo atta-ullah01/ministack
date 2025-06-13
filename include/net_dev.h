@@ -66,6 +66,9 @@ extern int
 net_protocol_register(uint16_t type, void (*handler)(const uint8_t *data, size_t len, struct net_dev *dev));
 
 extern int
+net_protocol_handler(void);
+
+extern int
 net_input_handler(struct net_dev *dev, void *data, const size_t len, uint16_t type);
 
 extern int

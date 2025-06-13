@@ -50,6 +50,7 @@ irq_init(void)
 {
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGHUP);
+	sigaddset(&sigmask, SIGUSR1);
 	tid = pthread_self();
 	pthread_barrier_init(&barrier, NULL, 2);
 	return 0;
@@ -66,6 +67,9 @@ irq_routine(void *arg)
 		switch (sig) {
 			case SIGHUP:
 				terminate = 1;
+				break;
+			case SIGUSR1:
+				net_protocol_handler();
 				break;
 			default:
 				for (struct irq_entry *en = irqs; en; en = en->next) {
@@ -109,4 +113,10 @@ int
 irq_raise(int irq)
 {
 	return pthread_kill(tid, irq);
+}
+
+int
+irq_soft_raise(void)
+{
+	return pthread_kill(tid, SIGUSR1);
 }

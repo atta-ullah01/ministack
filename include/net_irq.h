@@ -30,4 +30,7 @@ irq_shutdown(void);
 extern int
 irq_raise(int irq);
 
+extern int
+irq_soft_raise(void);
+
 #endif
