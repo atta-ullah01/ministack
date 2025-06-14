@@ -1,7 +1,7 @@
 DEBUG ?= 0
 # Compiler and flags
 CC := gcc
-CFLAGS := $(CFLAGS) -g  -W -Wall -Wno-unused-parameter -iquote include -iquote include/driver
+CFLAGS := $(CFLAGS) -g  -W -Wall -Wno-unused-parameter -iquote include -iquote include/driver -iquote test
 ifeq ($(DEBUG), 1)
 	CFLAGS += -DDEBUG
 endif
@@ -19,7 +19,7 @@ SRCS := $(wildcard $(SRC_DIR)/*.c) \
 
 OBJS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(SRCS))
 
-TARGET := test03
+TARGET := test04
 TAR_SRCS := $(wildcard $(TEST_DIR)/$(TARGET).c)
 TAR_OBJS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(TAR_SRCS))
 

@@ -33,7 +33,7 @@ log_print(FILE *stream, const char level, const char *file, const char *func, co
 void
 hexdump(FILE *stream, void *data, size_t len)
 {
-	char *ptr = (char *)data;
+	unsigned char *ptr = (unsigned char *)data;
 	flockfile(stream);
 	fprintf(stream, "+------+-------------------------------------------------+------------------+\n");
 	for (int i = 0; i < (int)len; i += 16) {
@@ -111,4 +111,69 @@ void *queue_peek(struct queue *que)
 	if (que->size == 0)
 		return NULL;
 	return que->head->data;
+}
+
+
+static int
+endian()
+{
+	uint32_t x = 1;
+	if (*(uint8_t *)&x)
+		return LITTLE_ENDIAN;
+	else
+		return BIG_ENDIAN;
+}
+
+uint16_t
+hton16(uint16_t h)
+{
+	if (endian() == LITTLE_ENDIAN)
+		return (h & 0xff) << 8 | (h & 0xff00) >> 8;
+	return h;
+}
+
+uint16_t
+ntoh16(uint16_t n)
+{
+	if (endian() == LITTLE_ENDIAN)
+		return (n & 0xff) << 8 | (n & 0xff00) >> 8;
+	return n;
+}
+
+uint32_t
+hton32(uint32_t h)
+{
+	if (endian() == LITTLE_ENDIAN)
+		return (h & 0xff) << 24 | (h & 0xff00) << 8 | (h & 0xff0000) >> 8 | (h & 0xff000000) >> 24;
+	else
+		return h;
+}
+
+uint32_t
+ntoh32(uint32_t n)
+{
+	if (endian() == LITTLE_ENDIAN)
+		return (n & 0xff) << 24 | (n & 0xff00) << 8 | (n & 0xff0000) >> 8 | (n & 0xff000000) >> 24;
+	else
+		return n;
+
+}
+
+uint16_t
+cksum16(const uint8_t *data, uint16_t bytecount, uint32_t init)
+{
+    uint32_t sum = init;
+
+    while (bytecount > 1) {
+        sum += ntoh16(*(uint16_t *)data);
+        data += 2;
+        bytecount -= 2;
+    }
+    if (bytecount) {
+        sum += (uint32_t)*data << 8;
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    return ~(uint16_t)sum;
 }

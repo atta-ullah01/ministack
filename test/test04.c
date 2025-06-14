@@ -5,6 +5,7 @@
 #include "loopback.h"
 #include "net_dev.h"
 #include "utils.h"
+#include "test.h"
 
 bool terminate = 0;
 void on_signal(int signum) {
@@ -27,12 +28,12 @@ main(int argc, char *argv[])
 		return -1;
 	}
 
-	char data[] = "hello world";
 	while (!terminate) {
-		if (net_dev_output(dev, data, sizeof(data), NET_PROT_TYPE_IP, NULL) == -1) {
+		if (net_dev_output(dev, (void *)test_data, sizeof(test_data), NET_PROT_TYPE_IP, NULL) == -1) {
 			log_error("net_dev_output() failure");
 			break;
 		}
+
 		sleep(1);
 	}
 	net_shutdown();

@@ -7,7 +7,7 @@ static int
 dummy_transmit(struct net_dev *dev, const uint8_t *data, const size_t len, uint16_t type, const uint8_t *dst)
 {
 	log_debug("dev=%s, len=%zu", dev->name, len);
-	debug_dump(data, len);
+	debug_dump((void *)data, len);
 	irq_raise(DUM_IRQ);
 	return 0;
 }

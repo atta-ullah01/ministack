@@ -29,7 +29,7 @@ loopback_transmit(struct net_dev *dev, const uint8_t *data, size_t len, uint16_t
 	queue_push(&lo->queue, entry);
 	pthread_mutex_unlock(&lo->mutex);
 	log_debug("queue pushed (num:%zu), dev=%s, type=0x%04x, len=%zd", lo->queue.size, dev->name, type, len);
-	debug_dump(data, len);
+	debug_dump((void *)data, len);
 	irq_raise(lo->irq);
 	return 0;
 }
