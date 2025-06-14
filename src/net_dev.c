@@ -104,6 +104,18 @@ net_dev_output(struct net_dev *dev, void *data, const size_t len, uint16_t type,
 	return 0;
 }
 
+struct net_iface *
+net_dev_get_iface(struct net_dev *dev, int family)
+{
+    struct net_iface *entry;
+
+    for (entry = dev->ifaces; entry; entry = entry->next) {
+        if (entry->family == family) {
+            return entry;
+        }
+    }
+    return NULL;
+}
 
 int
 net_input_handler(struct net_dev *dev, void *data, const size_t len, uint16_t type) 

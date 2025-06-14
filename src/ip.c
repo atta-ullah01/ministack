@@ -1,8 +1,14 @@
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "ip.h"
 #include "net_dev.h"
 #include "utils.h"
+
+const ip_addr_t IP_ADDR_ANY       = 0x00000000; /* 0.0.0.0 */
+const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff; /* 255.255.255.255 */
 
 struct ip_hdr
 {
@@ -18,6 +24,8 @@ struct ip_hdr
 	ip_addr_t dst;
 	uint8_t options[];
 };
+
+static struct ip_iface *ifaces;
 
 int
 ip_addr_pton(const char *p, ip_addr_t *n)
@@ -69,10 +77,78 @@ ip_dump(const uint8_t *data, size_t len)
 	funlockfile(stderr);
 }
 
+struct ip_iface *
+ip_iface_alloc(const char *unicast, const char *netmask)
+{
+    struct ip_iface *iface;
+
+    iface = malloc(sizeof(*iface));
+    if (!iface) {
+        log_error(strerror(errno));
+        return NULL;
+    }
+    ((struct net_iface *)iface)->family = NET_IFACE_FAMILY_IPV4;
+    if (ip_addr_pton(unicast, &iface->unicast) == -1) {
+        log_error("ip_addr_pton() failure, addr=%s", unicast);
+        free(iface);
+        return NULL;
+    }
+    if (ip_addr_pton(netmask, &iface->netmask) == -1) {
+        log_error("ip_addr_pton() failure, addr=%s", netmask);
+        free(iface);
+        return NULL;
+    }
+    iface->broadcast = (iface->unicast & iface->netmask) | ~iface->netmask;
+    return iface;
+}
+
+int
+ip_iface_register(struct net_dev *dev, struct ip_iface *iface)
+{
+    char addr1[IP_ADDR_STR_LEN];
+    char addr2[IP_ADDR_STR_LEN];
+    char addr3[IP_ADDR_STR_LEN];
+
+    struct net_iface *entry;
+    for (entry = dev->ifaces; entry; entry = entry->next) {
+	    if (((struct net_iface *)iface)->family == entry->family) {
+		    log_error("already exists, dev=%s, family=%d", dev->name, entry->family);
+		    return -1;
+	    }
+    }
+    ((struct net_iface *)iface)->dev = dev;
+    ((struct net_iface *)iface)->next = dev->ifaces;
+    dev->ifaces = (struct net_iface *)iface;
+
+    iface->next = ifaces;
+    ifaces = iface;
+
+    log_info("registered: dev=%s, unicast=%s, netmask=%s, broadcast=%s",
+        dev->name,
+        ip_addr_ntop(iface->unicast, addr1, sizeof(addr1)),
+        ip_addr_ntop(iface->netmask, addr2, sizeof(addr2)),
+        ip_addr_ntop(iface->broadcast, addr3, sizeof(addr3)));
+    return 0;
+}
+
+struct ip_iface *
+ip_iface_select(ip_addr_t addr)
+{
+    struct ip_iface *entry;
+
+    for (entry = ifaces; entry; entry = entry->next) {
+        if (entry->unicast == addr) {
+            return entry;
+        }
+    }
+    return NULL;
+}
+
 static void
 ip_input(const uint8_t *data, size_t len, struct net_dev *dev)
 {
 	struct ip_hdr *hdr;
+	struct ip_iface *iface;
 	uint8_t ver, hlen;
 	uint16_t flag_offset, total;
 
@@ -105,6 +181,19 @@ ip_input(const uint8_t *data, size_t len, struct net_dev *dev)
 		log_error("fragments does not support");
 		return;
 	}
+
+	iface = (struct ip_iface *)net_dev_get_iface(dev, NET_IFACE_FAMILY_IPV4);
+	if (!iface) {
+		/* iface is not registered to the device */
+		return;
+	}
+	if (hdr->dst != iface->unicast) {
+		if (hdr->dst != iface->broadcast && hdr->dst != IP_ADDR_BROADCAST) {
+			/* for other host */
+			return;
+		}
+	}
+
 	log_debug("dev=%s, len=%zu", dev->name, len);
 	ip_dump(data, len);
 }

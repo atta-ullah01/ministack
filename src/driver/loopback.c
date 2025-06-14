@@ -63,6 +63,7 @@ loopback_init(void)
 	if (!dev)
 		return NULL;
 
+	dev->ifaces = NULL;
 	dev->type = NET_DEV_TYPE_LOOPBACK;
 	dev->mtu = LOOPBACK_MTU;
 	dev->flags = NET_DEV_FLAG_LOOPBACK;
