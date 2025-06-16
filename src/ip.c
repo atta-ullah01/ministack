@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -196,6 +197,91 @@ ip_input(const uint8_t *data, size_t len, struct net_dev *dev)
 
 	log_debug("dev=%s, len=%zu", dev->name, len);
 	ip_dump(data, len);
+}
+
+static int
+ip_output_device(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t dst)
+{
+	uint8_t hwaddr[NET_DEV_ADDR_SZ] = {};
+
+	if (((struct net_iface *)iface)->dev->flags & NET_DEV_FLAG_NEED_ARP) {
+		if (dst == iface->broadcast || dst == IP_ADDR_BROADCAST) {
+			memcpy(hwaddr,((struct net_iface *)iface)->dev->broadcast,((struct net_iface *)iface)->dev->alen);
+		} else {
+			log_error("arp not implmeneted");
+			return -1;
+		}
+	}
+	return net_dev_output(((struct net_iface *)iface)->dev, (void *)data, len, NET_PROT_TYPE_IP, hwaddr);
+}
+
+
+static ssize_t
+ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, uint16_t id, uint16_t offset)
+{
+    uint8_t buf[IP_TOTAL_SIZE_MAX];
+    struct ip_hdr *hdr;
+    uint16_t hlen, total;
+    char addr[IP_ADDR_STR_LEN];
+
+    hdr = (struct ip_hdr *)buf;
+    hlen = sizeof(*hdr);
+    hdr->ver_len = (IP_VERSION_4 << 4) | (hlen >> 2);
+    hdr->tos = 0;
+    total = hlen + len;
+    hdr->tot_len = hton16(total);
+    hdr->id = hton16(id);
+    hdr->flag_offset = hton16(offset);
+    hdr->ttl = 0xff;
+    hdr->protocol = protocol;
+    hdr->checksum = 0;
+    hdr->src = src;
+    hdr->dst = dst;
+    hdr->checksum = hton16(cksum16((uint8_t *)hdr, hlen, 0));
+    memcpy(hdr+1, data, len);
+    log_debug("dev=%s, iface=%s, protocol=0x%02x, len=%u",
+        ((struct net_iface *)iface)->dev->name, ip_addr_ntop(iface->unicast, addr, sizeof(addr)), protocol, total);
+    ip_dump(buf, total);
+    return ip_output_device(iface, buf, total, dst);
+}
+
+ssize_t
+ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
+{
+	static uint16_t id = 127;
+	static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+	struct ip_iface *iface;
+	char addr[IP_ADDR_STR_LEN];
+
+	for (iface = ifaces; src != IP_ADDR_ANY && iface; iface = iface->next) {
+		if (iface->unicast == src) {
+			break;
+		}
+	}
+	if (src == IP_ADDR_ANY && dst == IP_ADDR_BROADCAST) {
+		log_error("source address is required for broadcast addresses");
+		return -1;
+	}
+	if (src != IP_ADDR_ANY && (!iface || src != iface->unicast)) {
+		log_error("unable to output with specified source address, addr=%s", ip_addr_ntop(src, addr, sizeof(addr)));
+		return -1;
+	}
+	if (((struct net_iface *)iface)->dev->mtu < IP_HDR_SIZE_MIN + len) {
+		log_error("too long, dev=%s, mtu=%u, tatal=%zu",
+				((struct net_iface *)iface)->dev->name, ((struct net_iface *)iface)->dev->mtu, IP_HDR_SIZE_MIN + len);
+		return -1;
+	}
+
+	pthread_mutex_lock(&mutex);
+	++id;
+	pthread_mutex_unlock(&mutex);
+
+	if (ip_output_core(iface, protocol, data, len, iface->unicast, dst, id, 0) == -1) {
+		log_error("ip_output_core() failure");
+		return -1;
+	}
+	return len;
 }
 
 int
