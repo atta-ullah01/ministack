@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include "ip.h"
 #include "net_dev.h"
@@ -26,7 +27,16 @@ struct ip_hdr
 	uint8_t options[];
 };
 
+struct ip_prot
+{
+    struct ip_prot *next;
+    uint8_t type;
+    char name[IP_PROT_NAME_SIZE_MAX];
+    void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct ip_iface *iface);
+};
+
 static struct ip_iface *ifaces;
+static struct ip_prot *protocols;
 
 int
 ip_addr_pton(const char *p, ip_addr_t *n)
@@ -185,18 +195,23 @@ ip_input(const uint8_t *data, size_t len, struct net_dev *dev)
 
 	iface = (struct ip_iface *)net_dev_get_iface(dev, NET_IFACE_FAMILY_IPV4);
 	if (!iface) {
-		/* iface is not registered to the device */
 		return;
 	}
 	if (hdr->dst != iface->unicast) {
 		if (hdr->dst != iface->broadcast && hdr->dst != IP_ADDR_BROADCAST) {
-			/* for other host */
 			return;
 		}
 	}
 
 	log_debug("dev=%s, len=%zu", dev->name, len);
 	ip_dump(data, len);
+	for (struct ip_prot *proto = protocols; proto; proto = proto->next) {
+		if (proto->type == hdr->protocol) {
+			proto->handler((uint8_t *)hdr + hlen, total - hlen, hdr->src, hdr->dst, iface);
+			return;
+		}
+	}
+	log_warn("unsupported protocol, type=0x%02x", hdr->protocol);
 }
 
 static int
@@ -283,6 +298,32 @@ ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_a
 	}
 	return len;
 }
+
+int
+ip_prot_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct ip_iface *iface))
+{
+    struct ip_prot *entry;
+
+    for (entry = protocols; entry; entry = entry->next) {
+        if (entry->type == type) {
+            log_error("already exists, type=%s(0x%02x), exist=%s(0x%02x)", name, type, entry->name, entry->type);
+            return -1;
+        }
+    }
+    entry = malloc(sizeof(*entry));
+    if (!entry) {
+        log_error(strerror(errno));
+        return -1;
+    }
+    strncpy(entry->name, name, IP_PROT_NAME_SIZE_MAX - 1);
+    entry->type = type;
+    entry->handler = handler;
+    entry->next = protocols;
+    protocols = entry;
+    log_info("registered, type=%s(0x%02x)", entry->name, entry->type);
+    return 0;
+}
+
 
 int
 ip_init(void)
