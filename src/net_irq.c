@@ -3,6 +3,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "net_dev.h"
 #include "net_irq.h"
@@ -51,16 +52,41 @@ irq_init(void)
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGHUP);
 	sigaddset(&sigmask, SIGUSR1);
+	sigaddset(&sigmask, SIGALRM);
 	tid = pthread_self();
 	pthread_barrier_init(&barrier, NULL, 2);
 	return 0;
 }
 
+static int
+intr_timer_setup(struct itimerspec *interval)
+{
+	timer_t id;
+
+	if (timer_create(CLOCK_REALTIME, NULL, &id) == -1) {
+		log_error("timer_create: %s", strerror(errno));
+		return -1;
+	}
+	if (timer_settime(id, 0, interval, NULL) == -1) {
+		log_error("timer_settime: %s", strerror(errno));
+		return -1;
+	}
+	return 0;
+
+}
+
 static void *
 irq_routine(void *arg)
 {
+	const struct timespec ts = {0, 1000000}; /* 1ms */
+	struct itimerspec interval = {ts, ts};
+
 	short terminate = 0;
 	pthread_barrier_wait(&barrier);
+	if (intr_timer_setup(&interval) == -1) {
+		log_error("intr_timer_setup() failure");
+		return NULL;
+	}
 	while (!terminate) {
 		int sig;
 		sigwait(&sigmask, &sig);
@@ -71,6 +97,10 @@ irq_routine(void *arg)
 			case SIGUSR1:
 				net_protocol_handler();
 				break;
+			case SIGALRM:
+				net_timer_handler();
+				break;
+
 			default:
 				for (struct irq_entry *en = irqs; en; en = en->next) {
 					if ((unsigned int)sig == en->irq) {

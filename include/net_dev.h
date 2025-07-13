@@ -1,8 +1,9 @@
 #ifndef NET_DEV_H
 #define NET_DEV_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <sys/time.h>
 
 #define IFNAMSIZ		16
 
@@ -96,5 +97,11 @@ net_shutdown();
 
 extern int
 net_init();
+
+extern int
+net_timer_register(struct timeval interval, void (*handler)(void));
+
+extern int
+net_timer_handler(void);
 
 #endif

@@ -14,8 +14,7 @@
 #define IP_PROT_TYPE_UDP 	0x11
 
 #define IP_ADDR_STR_LEN		16
-#define IP_VERSION_4		4
-#define IP_VERSION_6		6
+#define IP_ADDR_LEN		4
 
 #define IP_HDR_SIZE_MIN		(5 << 2)
 #define IP_PAYLOAD_SIZE_MAX	(IP_TOTAL_SIZE_MAX - IP_HDR_SIZE_MIN)

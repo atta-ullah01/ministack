@@ -1,0 +1,307 @@
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/time.h>
+
+#include "utils.h"
+#include "net_dev.h"
+#include "ether.h"
+#include "arp.h"
+#include "ip.h"
+
+#define ARP_HRD_ETHER 0x0001
+#define ARP_PRO_IP ETHER_TYPE_IP
+
+#define ARP_OP_REQUEST 1
+#define ARP_OP_REPLY   2
+
+#define ARP_CACHE_SIZE 32
+#define ARP_CACHE_TIMEOUT 30 /* seconds */
+
+#define ARP_CACHE_STATE_FREE       0
+#define ARP_CACHE_STATE_INCOMPLETE 1
+#define ARP_CACHE_STATE_RESOLVED   2
+#define ARP_CACHE_STATE_STATIC     3
+
+
+struct arp_hdr {
+	uint16_t hrd;
+	uint16_t pro;
+	uint8_t hln;
+	uint8_t pln;
+	uint16_t op;
+};
+
+struct arp_ether_ip {
+	struct arp_hdr hdr;
+	uint8_t sha[ETHER_ADDR_LEN];
+	uint8_t spa[IP_ADDR_LEN];
+	uint8_t tha[ETHER_ADDR_LEN];
+	uint8_t tpa[IP_ADDR_LEN];
+};
+
+struct arp_cache {
+    unsigned char state;
+    ip_addr_t pa;
+    uint8_t ha[ETHER_ADDR_LEN];
+    struct timeval timestamp;
+};
+
+static mutex_t mutex = MUTEX_INITIALIZER;
+static struct arp_cache caches[ARP_CACHE_SIZE];
+
+
+static char *
+arp_opcode_ntoa(uint16_t opcode)
+{
+	switch (ntoh16(opcode)) {
+		case ARP_OP_REQUEST:
+			return "Request";
+		case ARP_OP_REPLY:
+			return "Reply";
+	}
+	return "Unknown";
+}
+
+static void
+arp_dump(const uint8_t *data, size_t len)
+{
+	struct arp_ether_ip *message;
+	ip_addr_t spa, tpa;
+	char addr[128];
+
+	message = (struct arp_ether_ip *)data;
+	flockfile(stderr);
+	fprintf(stderr, "        hrd: 0x%04x\n", ntoh16(message->hdr.hrd));
+	fprintf(stderr, "        pro: 0x%04x\n", ntoh16(message->hdr.pro));
+	fprintf(stderr, "        hln: %u\n", message->hdr.hln);
+	fprintf(stderr, "        pln: %u\n", message->hdr.pln);
+	fprintf(stderr, "         op: %u (%s)\n", ntoh16(message->hdr.op), arp_opcode_ntoa(message->hdr.op));
+	fprintf(stderr, "        sha: %s\n", eth_addr_ntop(message->sha, addr, sizeof(addr)));
+	memcpy(&spa, message->spa, sizeof(spa));
+	fprintf(stderr, "        spa: %s\n", ip_addr_ntop(spa, addr, sizeof(addr)));
+	fprintf(stderr, "        tha: %s\n", eth_addr_ntop(message->tha, addr, sizeof(addr)));
+	memcpy(&tpa, message->tpa, sizeof(tpa));
+	fprintf(stderr, "        tpa: %s\n", ip_addr_ntop(tpa, addr, sizeof(addr)));
+#ifdef	DEBUG
+	hexdump(stderr, data, len);
+#endif
+	funlockfile(stderr);
+
+}
+
+static int
+arp_reply(struct net_iface *iface, const uint8_t *tha, ip_addr_t tpa, const uint8_t *dst)
+{
+	struct arp_ether_ip reply;
+
+	reply.hdr.hrd = hton16(ARP_HRD_ETHER);
+	reply.hdr.pro = hton16(ARP_PRO_IP);
+	reply.hdr.hln = ETHER_ADDR_LEN;
+	reply.hdr.pln = IP_ADDR_LEN;
+	reply.hdr.op = hton16(ARP_OP_REPLY);
+	memcpy(reply.sha, iface->dev->addr, ETHER_ADDR_LEN);
+	memcpy(reply.spa, &((struct ip_iface *)iface)->unicast, IP_ADDR_LEN);
+	memcpy(reply.tha, tha, ETHER_ADDR_LEN);
+	memcpy(reply.tpa, &tpa, IP_ADDR_LEN);
+	debugf("dev=%s, len=%zu", iface->dev->name, sizeof(reply));
+	arp_dump((uint8_t *)&reply, sizeof(reply));
+	return net_dev_output(iface->dev, (uint8_t *)&reply, sizeof(reply), ETHER_TYPE_ARP, dst);
+
+}
+
+static void
+arp_input(const uint8_t *data, size_t len, struct net_dev *dev)
+{
+	struct arp_ether_ip *msg;
+	ip_addr_t spa, tpa;
+	int merge = 0;
+	struct net_iface *iface;
+
+	if (len < sizeof(*msg)) {
+		log_error("too short");
+		return;
+	}
+	msg = (struct arp_ether_ip *)data;
+	if (ntoh16(msg->hdr.hrd) != ARP_HRD_ETHER || msg->hdr.hln != ETHER_ADDR_LEN) {
+		log_error("unsupported hardware address");
+		return;
+	}
+	if (ntoh16(msg->hdr.pro) != ARP_PRO_IP || msg->hdr.pln != IP_ADDR_LEN) {
+		log_error("unsupported protocol address");
+		return;
+	}
+	log_debug("dev=%s, len=%zu", dev->name, len);
+	arp_dump(data, len);
+	memcpy(&spa, msg->spa, sizeof(spa));
+	memcpy(&tpa, msg->tpa, sizeof(tpa));
+	mutex_lock(&mutex);
+	if (arp_cache_update(spa, msg->sha)) {
+		/* updated */
+		merge = 1;
+	}
+	mutex_unlock(&mutex);
+
+	iface = net_dev_get_iface(dev, NET_IFACE_FAMILY_IP4);
+	if (iface && ((struct ip_iface *)iface)->unicast == tpa) {
+		if (!merge) {
+			mutex_lock(&mutex);
+			arp_cache_insert(spa, msg->sha);
+			mutex_unlock(&mutex);
+		}
+
+		if (ntoh16(msg->hdr.op) == ARP_OP_REQUEST) {
+			arp_reply(iface, msg->sha, spa, msg->sha);
+		}
+	}
+
+}
+
+int
+arp_init(void)
+{
+	struct timeval interval = {1, 0};
+
+	if (net_protocol_register(NET_PROTOCOL_TYPE_ARP, arp_input) == -1) {
+		log_error("net_protocol_register() failure");
+		return -1;
+	}
+	if (net_timer_register(interval, arp_timer_handler) == -1) {
+		log_error("net_timer_register() failure");
+		return -1;
+	}
+	return 0;
+
+}
+
+static void
+arp_cache_delete(struct arp_cache *cache)
+{
+	char addr1[IP_ADDR_STR_LEN];
+	char addr2[ETHER_ADDR_STR_LEN];
+
+	log_debug("DELETE: pa=%s, ha=%s", ip_addr_ntop(cache->pa, addr1, sizeof(addr1)), eth_addr_ntop(cache->ha, addr2, sizeof(addr2)));
+	cache->state = ARP_CACHE_STATE_FREE;
+	cache->pa = 0;
+	memset(cache->ha, 0, ETHER_ADDR_LEN);
+	timerclear(&cache->timestamp);
+
+}
+
+static struct arp_cache *
+arp_cache_alloc(void)
+{
+	struct arp_cache *entry, *oldest = NULL;
+
+	for (entry = caches; entry < (caches + ARP_CACHE_SIZE); entry++) {
+		if (entry->state == ARP_CACHE_STATE_FREE) {
+			return entry;
+		}
+		if (!oldest || timercmp(&oldest->timestamp, &entry->timestamp, >)) {
+			oldest = entry;
+		}
+	}
+	arp_cache_delete(oldest);
+	return oldest;
+
+}
+
+static struct arp_cache *
+arp_cache_select(ip_addr_t pa)
+{
+	struct arp_cache *entry;
+
+	for (entry = caches; entry < (caches + ARP_CACHE_SIZE); entry++) {
+		if (entry->state != ARP_CACHE_STATE_FREE && entry->pa == pa) {
+			return entry;
+		}
+	}
+	return NULL;
+}
+
+static struct arp_cache *
+arp_cache_update(ip_addr_t pa, const uint8_t *ha)
+{
+	struct arp_cache *cache;
+	char addr1[IP_ADDR_STR_LEN];
+	char addr2[ETHER_ADDR_STR_LEN];
+
+	cache = arp_cache_select(pa);
+	if (!cache) {
+		/* not found */
+		return NULL;
+	}
+	cache->state = ARP_CACHE_STATE_RESOLVED;
+	memcpy(cache->ha, ha, ETHER_ADDR_LEN);
+	gettimeofday(&cache->timestamp, NULL);
+	log_debug("UPDATE: pa=%s, ha=%s", ip_addr_ntop(pa, addr1, sizeof(addr1)), eth_addr_ntop(ha, addr2, sizeof(addr2)));
+	return cache;
+}
+
+static struct arp_cache *
+arp_cache_insert(ip_addr_t pa, const uint8_t *ha)
+{
+	struct arp_cache *cache;
+	char addr1[IP_ADDR_STR_LEN];
+	char addr2[ETHER_ADDR_STR_LEN];
+
+	cache = arp_cache_alloc();
+	if (!cache) {
+		log_error("arp_cache_alloc() failure");
+		return NULL;
+	}
+	cache->state = ARP_CACHE_STATE_RESOLVED;
+	cache->pa = pa;
+	memcpy(cache->ha, ha, ETHER_ADDR_LEN);
+	gettimeofday(&cache->timestamp, NULL);
+	log_debug("INSERT: pa=%s, ha=%s", ip_addr_ntop(pa, addr1, sizeof(addr1)), eth_addr_ntop(ha, addr2, sizeof(addr2)));
+	return cache;
+}
+
+int
+arp_resolve(struct net_iface *iface, ip_addr_t pa, uint8_t *ha)
+{
+	struct arp_cache *cache;
+	char addr1[IP_ADDR_STR_LEN];
+	char addr2[ETHER_ADDR_STR_LEN];
+
+	if (iface->dev->type != NET_DEV_TYPE_ETHERNET) {
+		log_debug("unsupported hardware address type");
+		return ARP_RESOLVE_ERROR;
+	}
+	if (iface->family != NET_IFACE_FAMILY_IP4) {
+		log_debug("unsupported protocol address type");
+		return ARP_RESOLVE_ERROR;
+	}
+	mutex_lock(&mutex);
+	cache = arp_cache_select(pa);
+	if (!cache) {
+		log_debug("cache not found, pa=%s", ip_addr_ntop(pa, addr1, sizeof(addr1)));
+		mutex_unlock(&mutex);
+		return ARP_RESOLVE_ERROR;
+	}
+	memcpy(ha, cache->ha, ETHER_ADDR_LEN);
+	mutex_unlock(&mutex);
+	log_debug("resolved, pa=%s, ha=%s",
+			ip_addr_ntop(pa, addr1, sizeof(addr1)), eth_addr_ntop(ha, addr2, sizeof(addr2)));
+	return ARP_RESOLVE_FOUND;
+}
+
+static void
+arp_timer_handler(void)
+{
+	struct arp_cache *entry;
+	struct timeval now, diff;
+
+	mutex_lock(&mutex);
+	gettimeofday(&now, NULL);
+	for (entry = caches; entry < (caches + ARP_CACHE_SIZE); entry++) {
+		if (entry->state != ARP_CACHE_STATE_FREE && entry->state != ARP_CACHE_STATE_STATIC) {
+			timersub(&now, &entry->timestamp, &diff);
+			if (diff.tv_sec > ARP_CACHE_TIMEOUT) {
+				arp_cache_delete(entry);
+			}
+		}
+	}
+	mutex_unlock(&mutex);
+}

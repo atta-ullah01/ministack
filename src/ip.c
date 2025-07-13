@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/types.h>
 
+#include "arp.h"
 #include "ip.h"
 #include "net_dev.h"
 #include "utils.h"
@@ -218,13 +219,16 @@ static int
 ip_output_device(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t dst)
 {
 	uint8_t hwaddr[NET_DEV_ADDR_SZ] = {};
+	int ret;
 
 	if (((struct net_iface *)iface)->dev->flags & NET_DEV_FLAG_NEED_ARP) {
 		if (dst == iface->broadcast || dst == IP_ADDR_BROADCAST) {
 			memcpy(hwaddr,((struct net_iface *)iface)->dev->broadcast,((struct net_iface *)iface)->dev->alen);
 		} else {
-			log_error("arp not implmeneted");
-			return -1;
+			ret = arp_resolve(NET_IFACE(iface), dst, hwaddr);
+			if (ret != ARP_RESOLVE_FOUND) {
+				return ret;
+			}
 		}
 	}
 	return net_dev_output(((struct net_iface *)iface)->dev, (void *)data, len, NET_PROT_TYPE_IP, hwaddr);
@@ -329,7 +333,7 @@ int
 ip_init(void)
 {
 	if (net_protocol_register(NET_PROT_TYPE_IP, ip_input) < 0) {
-		log_error("net_protocol_register failure");
+		log_error("net_protocol_register() failure");
 		return -1;
 	}
 	log_info("protocol registered, type=0x%04x", NET_PROT_TYPE_IP);

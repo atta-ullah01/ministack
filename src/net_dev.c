@@ -1,7 +1,9 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 
+#include "arp.h"
 #include "ip.h"
 #include "net_dev.h"
 #include "net_irq.h"
@@ -22,8 +24,16 @@ struct net_protocol_queue_entry
 	uint8_t data[];
 };
 
+struct net_timer {
+    struct net_timer *next;
+    struct timeval interval;
+    struct timeval last;
+    void (*handler)(void);
+};
+
 static struct net_dev *devices;
 static struct net_protocol *protocols;
+static struct net_timer *timers;
 
 struct net_dev *
 net_dev_alloc()
@@ -150,6 +160,10 @@ net_init()
 		log_error("irq_init() failure");
 		return -1;
 	}
+	if (arp_init() < 0) {
+		log_error("arp_init() failure");
+		return -1;
+	}
 	if (ip_init() < 0) {
 		log_error("ip_init() failure");
 		return -1;
@@ -224,5 +238,41 @@ net_shutdown()
 		net_dev_close(dev);
 	}
 	log_debug("shutting down");
+	return 0;
+}
+
+int
+net_timer_register(struct timeval interval, void (*handler)(void))
+{
+	struct net_timer *timer;
+
+	timer = malloc(sizeof(*timer));
+	if (!timer) {
+		log_error(strerror(errno));
+		return -1;
+	}
+	timer->interval = interval;
+	gettimeofday(&timer->last, NULL);
+	timer->handler = handler;
+	timer->next = timers;
+	timers = timer;
+	log_infof("registered: interval={%d, %d}", interval.tv_sec, interval.tv_usec);
+	return 0;
+}
+
+int
+net_timer_handler(void)
+{
+	struct net_timer *timer;
+	struct timeval now, diff;
+
+	for (timer = timers; timer; timer = timer->next) {
+		gettimeofday(&now, NULL);
+		timersub(&now, &timer->last, &diff);
+		if (timercmp(&timer->interval, &diff, <) != 0) { /* true (!0) or false (0) */
+			timer->handler();
+			timer->last = now;
+		}
+	}
 	return 0;
 }
