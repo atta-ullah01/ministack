@@ -4,9 +4,11 @@
 #include <sys/time.h>
 
 #include "arp.h"
+#include "icmp.h"
 #include "ip.h"
 #include "net_dev.h"
 #include "net_irq.h"
+#include "udp.h"
 #include "utils.h"
 
 struct net_protocol
@@ -166,6 +168,14 @@ net_init()
 	}
 	if (ip_init() < 0) {
 		log_error("ip_init() failure");
+		return -1;
+	}
+	if (icmp_init() == -1) {
+		log_error("icmp_init() failure");
+		return -1;
+	}
+	if (udp_init() == -1) {
+		log_error("udp_init() failure");
 		return -1;
 	}
 	log_info("initialized");
