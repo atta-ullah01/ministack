@@ -47,7 +47,7 @@ struct arp_cache {
     struct timeval timestamp;
 };
 
-static mutex_t mutex = MUTEX_INITIALIZER;
+static pthread_mutex_t mutex = MUTEX_INITIALIZER;
 static struct arp_cache caches[ARP_CACHE_SIZE];
 
 
@@ -135,19 +135,19 @@ arp_input(const uint8_t *data, size_t len, struct net_dev *dev)
 	arp_dump(data, len);
 	memcpy(&spa, msg->spa, sizeof(spa));
 	memcpy(&tpa, msg->tpa, sizeof(tpa));
-	mutex_lock(&mutex);
+	pthread_mutex_lock(&mutex);
 	if (arp_cache_update(spa, msg->sha)) {
 		/* updated */
 		merge = 1;
 	}
-	mutex_unlock(&mutex);
+	pthread_mutex_unlock(&mutex);
 
 	iface = net_dev_get_iface(dev, NET_IFACE_FAMILY_IP4);
 	if (iface && ((struct ip_iface *)iface)->unicast == tpa) {
 		if (!merge) {
-			mutex_lock(&mutex);
+			pthread_mutex_lock(&mutex);
 			arp_cache_insert(spa, msg->sha);
-			mutex_unlock(&mutex);
+			pthread_mutex_unlock(&mutex);
 		}
 
 		if (ntoh16(msg->hdr.op) == ARP_OP_REQUEST) {
@@ -273,15 +273,15 @@ arp_resolve(struct net_iface *iface, ip_addr_t pa, uint8_t *ha)
 		log_debug("unsupported protocol address type");
 		return ARP_RESOLVE_ERROR;
 	}
-	mutex_lock(&mutex);
+	pthread_mutex_lock(&mutex);
 	cache = arp_cache_select(pa);
 	if (!cache) {
 		log_debug("cache not found, pa=%s", ip_addr_ntop(pa, addr1, sizeof(addr1)));
-		mutex_unlock(&mutex);
+		pthread_mutex_unlock(&mutex);
 		return ARP_RESOLVE_ERROR;
 	}
 	memcpy(ha, cache->ha, ETHER_ADDR_LEN);
-	mutex_unlock(&mutex);
+	pthread_mutex_unlock(&mutex);
 	log_debug("resolved, pa=%s, ha=%s",
 			ip_addr_ntop(pa, addr1, sizeof(addr1)), eth_addr_ntop(ha, addr2, sizeof(addr2)));
 	return ARP_RESOLVE_FOUND;
@@ -293,7 +293,7 @@ arp_timer_handler(void)
 	struct arp_cache *entry;
 	struct timeval now, diff;
 
-	mutex_lock(&mutex);
+	pthread_mutex_lock(&mutex);
 	gettimeofday(&now, NULL);
 	for (entry = caches; entry < (caches + ARP_CACHE_SIZE); entry++) {
 		if (entry->state != ARP_CACHE_STATE_FREE && entry->state != ARP_CACHE_STATE_STATIC) {
@@ -303,5 +303,5 @@ arp_timer_handler(void)
 			}
 		}
 	}
-	mutex_unlock(&mutex);
+	pthread_mutex_unlock(&mutex);
 }
