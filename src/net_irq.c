@@ -52,6 +52,7 @@ irq_init(void)
 	sigemptyset(&sigmask);
 	sigaddset(&sigmask, SIGHUP);
 	sigaddset(&sigmask, SIGUSR1);
+	sigaddset(&sigmask, SIGUSR2);
 	sigaddset(&sigmask, SIGALRM);
 	tid = pthread_self();
 	pthread_barrier_init(&barrier, NULL, 2);
@@ -97,6 +98,8 @@ irq_routine(void *arg)
 			case SIGUSR1:
 				net_protocol_handler();
 				break;
+			case SIGUSR2:
+				net_event_handler();
 			case SIGALRM:
 				net_timer_handler();
 				break;
@@ -143,10 +146,4 @@ int
 irq_raise(int irq)
 {
 	return pthread_kill(tid, irq);
-}
-
-int
-irq_soft_raise(void)
-{
-	return pthread_kill(tid, SIGUSR1);
 }

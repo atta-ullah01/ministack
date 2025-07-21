@@ -90,6 +90,15 @@ extern int
 net_input_handler(struct net_dev *dev, void *data, const size_t len, uint16_t type);
 
 extern int
+net_event_subscribe(void (*handler)(void *arg), void *arg);
+
+extern int
+net_event_handler(void);
+
+extern void
+net_raise_event(void);
+
+extern int
 net_run();
 
 extern int

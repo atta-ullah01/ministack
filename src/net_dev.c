@@ -33,9 +33,16 @@ struct net_timer {
     void (*handler)(void);
 };
 
+struct net_event {
+    struct net_event *next;
+    void (*handler)(void *arg);
+    void *arg;
+};
+
 static struct net_dev *devices;
 static struct net_protocol *protocols;
 static struct net_timer *timers;
+static struct net_event *events;
 
 struct net_dev *
 net_dev_alloc()
@@ -222,6 +229,40 @@ net_protocol_handler(void)
 }
 
 int
+net_event_subscribe(void (*handler)(void *arg), void *arg)
+{
+	struct net_event *event;
+
+	event = malloc(sizeof(*event));
+	if (!event) {
+		log_error(strerror(errno));
+		return -1;
+	}
+	event->handler = handler;
+	event->arg = arg;
+	event->next = events;
+	events = event;
+	return 0;
+}
+
+int
+net_event_handler(void)
+{
+	struct net_event *event;
+
+	for (event = events; event; event = event->next) {
+		event->handler(event->arg);
+	}
+	return 0;
+}
+
+void
+net_raise_event()
+{
+	irq_raise(INTR_IRQ_EVENT);
+}
+
+int
 net_run()
 {
 	if (irq_run() < 0) {
@@ -279,7 +320,7 @@ net_timer_handler(void)
 	for (timer = timers; timer; timer = timer->next) {
 		gettimeofday(&now, NULL);
 		timersub(&now, &timer->last, &diff);
-		if (timercmp(&timer->interval, &diff, <) != 0) { /* true (!0) or false (0) */
+		if (timercmp(&timer->interval, &diff, <) != 0) {
 			timer->handler();
 			timer->last = now;
 		}
