@@ -10,9 +10,6 @@
 #include "net_dev.h"
 #include "utils.h"
 
-const ip_addr_t IP_ADDR_ANY       = 0x00000000; /* 0.0.0.0 */
-const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff; /* 255.255.255.255 */
-
 struct ip_hdr {
 	uint8_t ver_len;
 	uint8_t tos;
@@ -30,7 +27,6 @@ struct ip_hdr {
 struct ip_prot {
     struct ip_prot *next;
     uint8_t type;
-    char name[IP_PROT_NAME_SIZE_MAX];
     void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct ip_iface *iface);
 };
 
@@ -42,6 +38,8 @@ struct ip_route {
     struct ip_iface *iface;
 };
 
+const ip_addr_t IP_ADDR_ANY       = 0x00000000; /* 0.0.0.0 */
+const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff; /* 255.255.255.255 */
 
 static struct ip_iface *ifaces;
 static struct ip_prot *protocols;
@@ -151,12 +149,12 @@ ip_route_add(ip_addr_t network, ip_addr_t netmask, ip_addr_t nexthop, struct ip_
 	route->iface = iface;
 	route->next = routes;
 	routes = route;
-	log_infof("route added: network=%s, netmask=%s, nexthop=%s, iface=%s dev=%s",
+	log_info("route added: network=%s, netmask=%s, nexthop=%s, iface=%s dev=%s",
 			ip_addr_ntop(route->network, addr1, sizeof(addr1)),
 			ip_addr_ntop(route->netmask, addr2, sizeof(addr2)),
 			ip_addr_ntop(route->nexthop, addr3, sizeof(addr3)),
 			ip_addr_ntop(route->iface->unicast, addr4, sizeof(addr4)),
-			NET_IFACE(iface)->dev->name
+			((struct net_iface *)iface)->dev->name
 	     );
 	return route;
 }
@@ -346,7 +344,7 @@ ip_output_device(struct ip_iface *iface, const uint8_t *data, size_t len, ip_add
 		if (dst == iface->broadcast || dst == IP_ADDR_BROADCAST) {
 			memcpy(hwaddr,((struct net_iface *)iface)->dev->broadcast,((struct net_iface *)iface)->dev->alen);
 		} else {
-			ret = arp_resolve(NET_IFACE(iface), dst, hwaddr);
+			ret = arp_resolve((struct net_iface *)(iface), dst, hwaddr);
 			if (ret != ARP_RESOLVE_FOUND) {
 				return ret;
 			}
@@ -429,13 +427,13 @@ ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_a
 }
 
 int
-ip_prot_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct ip_iface *iface))
+ip_prot_register(uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct ip_iface *iface))
 {
     struct ip_prot *entry;
 
     for (entry = protocols; entry; entry = entry->next) {
         if (entry->type == type) {
-            log_error("already exists, type=%s(0x%02x), exist=%s(0x%02x)", name, type, entry->name, entry->type);
+            log_error("already exists, type=(0x%02x)", type);
             return -1;
         }
     }
@@ -444,12 +442,11 @@ ip_prot_register(const char *name, uint8_t type, void (*handler)(const uint8_t *
         log_error(strerror(errno));
         return -1;
     }
-    strncpy(entry->name, name, IP_PROT_NAME_SIZE_MAX - 1);
     entry->type = type;
     entry->handler = handler;
     entry->next = protocols;
     protocols = entry;
-    log_info("registered, type=%s(0x%02x)", entry->name, entry->type);
+    log_info("registered, type=(0x%02x)", entry->type);
     return 0;
 }
 

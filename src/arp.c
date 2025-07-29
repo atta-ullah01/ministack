@@ -1,3 +1,4 @@
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -47,7 +48,7 @@ struct arp_cache {
     struct timeval timestamp;
 };
 
-static pthread_mutex_t mutex = MUTEX_INITIALIZER;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct arp_cache caches[ARP_CACHE_SIZE];
 
 
@@ -84,7 +85,7 @@ arp_dump(const uint8_t *data, size_t len)
 	memcpy(&tpa, message->tpa, sizeof(tpa));
 	fprintf(stderr, "        tpa: %s\n", ip_addr_ntop(tpa, addr, sizeof(addr)));
 #ifdef	DEBUG
-	hexdump(stderr, data, len);
+	hexdump(stderr, (void *)data, len);
 #endif
 	funlockfile(stderr);
 
@@ -104,73 +105,9 @@ arp_reply(struct net_iface *iface, const uint8_t *tha, ip_addr_t tpa, const uint
 	memcpy(reply.spa, &((struct ip_iface *)iface)->unicast, IP_ADDR_LEN);
 	memcpy(reply.tha, tha, ETHER_ADDR_LEN);
 	memcpy(reply.tpa, &tpa, IP_ADDR_LEN);
-	debugf("dev=%s, len=%zu", iface->dev->name, sizeof(reply));
+	log_debug("dev=%s, len=%zu", iface->dev->name, sizeof(reply));
 	arp_dump((uint8_t *)&reply, sizeof(reply));
 	return net_dev_output(iface->dev, (uint8_t *)&reply, sizeof(reply), ETHER_TYPE_ARP, dst);
-
-}
-
-static void
-arp_input(const uint8_t *data, size_t len, struct net_dev *dev)
-{
-	struct arp_ether_ip *msg;
-	ip_addr_t spa, tpa;
-	int merge = 0;
-	struct net_iface *iface;
-
-	if (len < sizeof(*msg)) {
-		log_error("too short");
-		return;
-	}
-	msg = (struct arp_ether_ip *)data;
-	if (ntoh16(msg->hdr.hrd) != ARP_HRD_ETHER || msg->hdr.hln != ETHER_ADDR_LEN) {
-		log_error("unsupported hardware address");
-		return;
-	}
-	if (ntoh16(msg->hdr.pro) != ARP_PRO_IP || msg->hdr.pln != IP_ADDR_LEN) {
-		log_error("unsupported protocol address");
-		return;
-	}
-	log_debug("dev=%s, len=%zu", dev->name, len);
-	arp_dump(data, len);
-	memcpy(&spa, msg->spa, sizeof(spa));
-	memcpy(&tpa, msg->tpa, sizeof(tpa));
-	pthread_mutex_lock(&mutex);
-	if (arp_cache_update(spa, msg->sha)) {
-		/* updated */
-		merge = 1;
-	}
-	pthread_mutex_unlock(&mutex);
-
-	iface = net_dev_get_iface(dev, NET_IFACE_FAMILY_IP4);
-	if (iface && ((struct ip_iface *)iface)->unicast == tpa) {
-		if (!merge) {
-			pthread_mutex_lock(&mutex);
-			arp_cache_insert(spa, msg->sha);
-			pthread_mutex_unlock(&mutex);
-		}
-
-		if (ntoh16(msg->hdr.op) == ARP_OP_REQUEST) {
-			arp_reply(iface, msg->sha, spa, msg->sha);
-		}
-	}
-
-}
-
-int
-arp_init(void)
-{
-	struct timeval interval = {1, 0};
-
-	if (net_protocol_register(NET_PROTOCOL_TYPE_ARP, arp_input) == -1) {
-		log_error("net_protocol_register() failure");
-		return -1;
-	}
-	if (net_timer_register(interval, arp_timer_handler) == -1) {
-		log_error("net_timer_register() failure");
-		return -1;
-	}
-	return 0;
 
 }
 
@@ -258,6 +195,53 @@ arp_cache_insert(ip_addr_t pa, const uint8_t *ha)
 	return cache;
 }
 
+static void
+arp_input(const uint8_t *data, size_t len, struct net_dev *dev)
+{
+	struct arp_ether_ip *msg;
+	ip_addr_t spa, tpa;
+	int merge = 0;
+	struct net_iface *iface;
+
+	if (len < sizeof(*msg)) {
+		log_error("too short");
+		return;
+	}
+	msg = (struct arp_ether_ip *)data;
+	if (ntoh16(msg->hdr.hrd) != ARP_HRD_ETHER || msg->hdr.hln != ETHER_ADDR_LEN) {
+		log_error("unsupported hardware address");
+		return;
+	}
+	if (ntoh16(msg->hdr.pro) != ARP_PRO_IP || msg->hdr.pln != IP_ADDR_LEN) {
+		log_error("unsupported protocol address");
+		return;
+	}
+	log_debug("dev=%s, len=%zu", dev->name, len);
+	arp_dump(data, len);
+	memcpy(&spa, msg->spa, sizeof(spa));
+	memcpy(&tpa, msg->tpa, sizeof(tpa));
+	pthread_mutex_lock(&mutex);
+	if (arp_cache_update(spa, msg->sha)) {
+		/* updated */
+		merge = 1;
+	}
+	pthread_mutex_unlock(&mutex);
+
+	iface = net_dev_get_iface(dev, NET_IFACE_FAMILY_IPV4);
+	if (iface && ((struct ip_iface *)iface)->unicast == tpa) {
+		if (!merge) {
+			pthread_mutex_lock(&mutex);
+			arp_cache_insert(spa, msg->sha);
+			pthread_mutex_unlock(&mutex);
+		}
+
+		if (ntoh16(msg->hdr.op) == ARP_OP_REQUEST) {
+			arp_reply(iface, msg->sha, spa, msg->sha);
+		}
+	}
+
+}
+
 int
 arp_resolve(struct net_iface *iface, ip_addr_t pa, uint8_t *ha)
 {
@@ -269,7 +253,7 @@ arp_resolve(struct net_iface *iface, ip_addr_t pa, uint8_t *ha)
 		log_debug("unsupported hardware address type");
 		return ARP_RESOLVE_ERROR;
 	}
-	if (iface->family != NET_IFACE_FAMILY_IP4) {
+	if (iface->family != NET_IFACE_FAMILY_IPV4) {
 		log_debug("unsupported protocol address type");
 		return ARP_RESOLVE_ERROR;
 	}
@@ -304,4 +288,21 @@ arp_timer_handler(void)
 		}
 	}
 	pthread_mutex_unlock(&mutex);
+}
+
+int
+arp_init(void)
+{
+	struct timeval interval = {1, 0};
+
+	if (net_protocol_register(NET_PROT_TYPE_IP, arp_input) == -1) {
+		log_error("net_protocol_register() failure");
+		return -1;
+	}
+	if (net_timer_register(interval, arp_timer_handler) == -1) {
+		log_error("net_timer_register() failure");
+		return -1;
+	}
+	return 0;
+
 }

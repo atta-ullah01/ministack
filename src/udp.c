@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -6,9 +7,10 @@
 #include <string.h>
 #include <sys/types.h>
 
-#include "utils.h"
 #include "ip.h"
+#include "net_irq.h"
 #include "udp.h"
+#include "utils.h"
 
 #define UDP_PCB_SIZE 16
 
@@ -47,7 +49,7 @@ struct udp_queue_entry {
     uint8_t data[];
 };
 
-static pthread_mutex_t mutex = MUTEX_INITIALIZER;
+static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct udp_pcb pcbs[UDP_PCB_SIZE];
 
 static void
@@ -62,7 +64,7 @@ udp_dump(const uint8_t *data, size_t len)
 	fprintf(stderr, "        len: %u\n", ntoh16(hdr->len));
 	fprintf(stderr, "        sum: 0x%04x\n", ntoh16(hdr->sum));
 #ifdef DEBUG
-	hexdump(stderr, data, len);
+	hexdump(stderr, (void *)data, len);
 #endif
 	funlockfile(stderr);
 }
@@ -167,9 +169,9 @@ udp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
 	pseudo.zero = 0;
 	pseudo.protocol = IP_PROT_TYPE_UDP;
 	pseudo.len = hton16(len);
-	psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
-	if (cksum16((uint16_t *)hdr, len, psum) != 0) {
-		log_error("checksum error: sum=0x%04x, verify=0x%04x", ntoh16(hdr->sum), ntoh16(cksum16((uint16_t *)hdr, len, -hdr->sum + psum)));
+	psum = ~cksum16((uint8_t *)&pseudo, sizeof(pseudo), 0);
+	if (cksum16((uint8_t *)hdr, len, psum) != 0) {
+		log_error("checksum error: sum=0x%04x, verify=0x%04x", ntoh16(hdr->sum), ntoh16(cksum16((uint8_t *)hdr, len, -hdr->sum + psum)));
 		return;
 	}
 	log_debug("%s:%d => %s:%d, len=%zu (payload=%zu)",
@@ -194,12 +196,8 @@ udp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, struct 
 	entry->foreign.port = hdr->src;
 	entry->len = len - sizeof(*hdr);
 	memcpy(entry->data, hdr+1, entry->len);
-	if (!queue_push(&pcb->queue, entry)) {
-		pthread_mutex_unlock(&mutex);
-		log_error("queue_push() failure");
-		return;
-	}
-	log_debug("queue pushed: id=%d, num=%d", udp_pcb_id(pcb), pcb->queue.num);
+	queue_push(&pcb->queue, entry);
+	log_debug("queue pushed: id=%d, num=%d", udp_pcb_id(pcb), pcb->queue.size);
 	sched_wakeup(&pcb->ctx);
 	pthread_mutex_unlock(&mutex);
 }
@@ -230,8 +228,8 @@ udp_output(struct ip_endpoint *src, struct ip_endpoint *dst, const  uint8_t *dat
 	pseudo.zero = 0;
 	pseudo.protocol = IP_PROT_TYPE_UDP;
 	pseudo.len = hton16(total);
-	psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
-	hdr->sum = cksum16((uint16_t *)hdr, total, psum);
+	psum = ~cksum16((uint8_t *)&pseudo, sizeof(pseudo), 0);
+	hdr->sum = cksum16((uint8_t *)hdr, total, psum);
 	log_debug("%s => %s, len=%zu (payload=%zu)",
 			ip_endpoint_ntop(src, ep1, sizeof(ep1)), ip_endpoint_ntop(dst, ep2, sizeof(ep2)), total, len);
 	udp_dump((uint8_t *)hdr, total);
@@ -248,7 +246,7 @@ event_handler(void *arg)
 	struct udp_pcb *pcb;
 
 	(void)arg;
-	mutex_lock(&mutex);
+	pthread_mutex_lock(&mutex);
 	for (pcb = pcbs; pcb < (pcbs + UDP_PCB_SIZE); pcb++) {
 		if (pcb->state == UDP_PCB_STATE_OPEN) {
 			sched_interrupt(&pcb->ctx);
@@ -314,7 +312,7 @@ udp_bind(int id, struct ip_endpoint *local)
 	pcb = udp_pcb_get(id);
 	if (!pcb) {
 		log_error("pcb not found, id=%d", id);
-		log_mutex_unlock(&mutex);
+		pthread_mutex_unlock(&mutex);
 		return -1;
 	}
 	exist = udp_pcb_select(local->addr, local->port);
@@ -418,7 +416,7 @@ udp_recvfrom(int id, uint8_t *buf, size_t size, struct ip_endpoint *foreign)
 		*foreign = entry->foreign;
 	}
 	len = entry->len;
-	if (len > size)
+	if (len > (uint16_t)size)
 		len = size;
 
 	memcpy(buf, entry->data, len);

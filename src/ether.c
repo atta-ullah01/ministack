@@ -22,7 +22,7 @@ eth_dump(const uint8_t *frame, size_t flen)
     fprintf(stderr, "        dst: %s\n", eth_addr_ntop(hdr->dst, addr, sizeof(addr)));
     fprintf(stderr, "       type: 0x%04x (%s)\n", ntoh16(hdr->type), eth_type_ntoa(hdr->type));
 #ifdef DEBUG
-    hexdump(stderr, frame, flen);
+    hexdump(stderr, (void *)frame, flen);
 #endif
     funlockfile(stderr);
 }

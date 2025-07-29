@@ -100,6 +100,7 @@ irq_routine(void *arg)
 				break;
 			case SIGUSR2:
 				net_event_handler();
+				break;
 			case SIGALRM:
 				net_timer_handler();
 				break;

@@ -8,6 +8,7 @@
 #include "ip.h"
 #include "net_dev.h"
 #include "net_irq.h"
+#include "tcp.h"
 #include "udp.h"
 #include "utils.h"
 
@@ -154,7 +155,7 @@ net_input_handler(struct net_dev *dev, void *data, const size_t len, uint16_t ty
 			queue_push(&prot->queue, entry);
 			log_debug("queue pushed, dev=%s, type=0x%04x, len=%zu", dev->name, type, len);
 			debug_dump(data, len);
-			irq_soft_raise();
+			irq_raise(INTR_IRQ_SOFTIRQ);
 			return 0;
 		}
 	}
@@ -183,6 +184,10 @@ net_init()
 	}
 	if (udp_init() == -1) {
 		log_error("udp_init() failure");
+		return -1;
+	}
+	if (tcp_init() == -1) {
+		log_error("tcp_init() failure");
 		return -1;
 	}
 	log_info("initialized");
@@ -307,7 +312,7 @@ net_timer_register(struct timeval interval, void (*handler)(void))
 	timer->handler = handler;
 	timer->next = timers;
 	timers = timer;
-	log_infof("registered: interval={%d, %d}", interval.tv_sec, interval.tv_usec);
+	log_info("registered: interval={%d, %d}", interval.tv_sec, interval.tv_usec);
 	return 0;
 }
 
