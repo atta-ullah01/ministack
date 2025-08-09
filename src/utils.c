@@ -113,6 +113,18 @@ void *queue_peek(struct queue *que)
 	return que->head->data;
 }
 
+void
+queue_foreach(struct queue *queue, void (*func)(void *arg, void *data), void *arg)
+{
+    struct queue_node *entry;
+
+    if (!queue || !func) {
+        return;
+    }
+    for (entry = queue->head; entry; entry = entry->next) {
+        func(arg, entry->data);
+    }
+}
 
 static int
 endian()

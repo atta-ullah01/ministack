@@ -4,6 +4,25 @@
 #include <stdio.h>
 #include <stdint.h>
 
+#define timeval_add_usec(x, y)         \
+    do {                               \
+        (x)->tv_sec += y / 1000000;    \
+        (x)->tv_usec += y % 1000000;   \
+        if ((x)->tv_usec >= 1000000) { \
+            (x)->tv_sec += 1;          \
+            (x)->tv_usec -= 1000000;   \
+        }                              \
+    } while(0);
+
+#define timespec_add_nsec(x, y)           \
+    do {                                  \
+        (x)->tv_sec += y / 1000000000;    \
+        (x)->tv_nsec += y % 1000000000;   \
+        if ((x)->tv_nsec >= 1000000000) { \
+            (x)->tv_sec += 1;             \
+            (x)->tv_nsec -= 1000000000;   \
+        }                                 \
+    } while(0);
 
 #define log_error(...)  log_print(stderr, 'E', __FILE__, __func__, __LINE__, __VA_ARGS__)
 #define log_warn(...)	log_print(stderr, 'W', __FILE__, __func__, __LINE__, __VA_ARGS__)
@@ -42,6 +61,9 @@ queue_pop(struct queue *que);
 
 extern void *
 queue_peek(struct queue *que);
+
+void
+queue_foreach(struct queue *queue, void (*func)(void *arg, void *data), void *arg);
 
 #ifndef LITTLE_ENDIAN
 #define LITTLE_ENDIAN 1234
