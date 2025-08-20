@@ -17,6 +17,21 @@ tcp_send(int id, uint8_t *data, size_t len);
 
 extern ssize_t
 tcp_receive(int id, uint8_t *buf, size_t size);
- 
+
+extern int
+tcp_open(void);
+
+extern int
+tcp_bind(int id, struct ip_endpoint *local);
+
+extern int
+tcp_connect(int id, struct ip_endpoint *foreign);
+
+extern int
+tcp_listen(int id, int backlog);
+
+extern int
+tcp_accept(int id, struct ip_endpoint *foreign);
+
 #endif
 
