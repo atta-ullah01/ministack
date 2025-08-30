@@ -35,7 +35,7 @@ loopback_transmit(struct net_dev *dev, const uint8_t *data, size_t len, uint16_t
 }
 
 static int
-loopback_isr(unsigned int irq, void *dev)
+loopback_irq(unsigned int irq, void *dev)
 {
 	struct net_dev *ldev = (struct net_dev *)dev;
 	struct loopback *lo = ldev->driv;
@@ -89,7 +89,7 @@ loopback_init(void)
 		return NULL;
 	}
 
-	if (irq_register(LOOPBACK_IRQ, loopback_isr, 0, dev->name, dev) < 0) {
+	if (irq_register(LOOPBACK_IRQ, loopback_irq, 0, dev->name, dev) < 0) {
 		free(dev);
 		free(lo);
 		return NULL;

@@ -9,30 +9,35 @@ endif
 # Directories
 SRC_DIR := src
 DRIVER_DIR := src/driver
-TEST_DIR := test
 BUILD_DIR := build
-
+BIN_DIR := bin
+APP_DIR := app
 
 # Source and Object files
 SRCS := $(wildcard $(SRC_DIR)/*.c) \
 	$(wildcard $(DRIVER_DIR)/*.c)
+APP_SRCS := $(wildcard $(APP_DIR)/*.c)
 
 OBJS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(SRCS))
+APP_OBJS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(APP_SRCS))
 
-TARGET := test07
-TAR_SRCS := $(wildcard $(TEST_DIR)/$(TARGET).c)
-TAR_OBJS := $(patsubst %.c, $(BUILD_DIR)/%.o, $(TAR_SRCS))
 
-all: $(TARGET)
+APPS := $(patsubst $(APP_DIR)/%.c,%,$(APP_SRCS))
+BINS := $(patsubst %,$(BIN_DIR)/%,$(APPS))
 
-$(TARGET): $(OBJS) $(TAR_OBJS)
-	$(CC) $(CFLAGS) $^ -o $@ 
+.PHONY: all apps clean
+
+all: apps
+
+apps: $(BINS)
+
+$(BIN_DIR)/%: $(OBJS) $(BUILD_DIR)/$(APP_DIR)/%.o
+	@mkdir -p $(dir $@)
+	$(CC) $(CFLAGS) $^ -o $@
 
 $(BUILD_DIR)/%.o: %.c
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c $^ -o $@
 
 clean: 
-	rm -rf $(BUILD_DIR) $(TARGET)
-
-.PHONY: all clean
+	rm -rf $(BUILD_DIR) $(BIN_DIR)

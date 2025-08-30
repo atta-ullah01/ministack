@@ -365,7 +365,7 @@ udp_sendto(int id, uint8_t *data, size_t len, struct ip_endpoint *foreign)
 			}
 		}
 		if (!pcb->local.port) {
-			log_debug("failed to dinamic assign local port, addr=%s", ip_addr_ntop(local.addr, addr, sizeof(addr)));
+			log_error("failed to dinamic assign local port, addr=%s", ip_addr_ntop(local.addr, addr, sizeof(addr)));
 			pthread_mutex_unlock(&mutex);
 			return -1;
 		}

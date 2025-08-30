@@ -48,7 +48,7 @@ static struct net_event *events;
 struct net_dev *
 net_dev_alloc()
 {
-	struct net_dev *dev = malloc(sizeof(*dev));
+	struct net_dev *dev = calloc(1, sizeof(*dev));
 	if (!dev) {
 		log_error(strerror(errno));
 		return NULL;
@@ -212,6 +212,7 @@ net_protocol_register(uint16_t type, void (*handler)(const uint8_t *data, size_t
 	prot->type = type;
 	prot->handler = handler;
 	prot->next = protocols;
+	queue_init(&prot->queue);
 	protocols = prot;
 	log_info("registered protocol, type=0x%04x", type);
 	return 0;

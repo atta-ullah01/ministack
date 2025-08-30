@@ -21,16 +21,13 @@
 
 #define NET_DEV_STATE(x)	x & NET_DEV_FLAG_UP ? "up": "down"
 
-#define NET_PROTOCOL_TYPE_IP   0x0800
-#define NET_PROTOCOL_TYPE_ARP  0x0806
+#define NET_PROT_TYPE_IP   0x0800
+#define NET_PROT_TYPE_ARP  0x0806
 
 #define NET_IFACE_FAMILY_IPV4	1
 #define NET_IFACE_FAMILY_IPV6	2
 
 #define NET_IRQ_SHARED		0x0001
-
-#define NET_PROT_TYPE_ARP	0x0806
-#define NET_PROT_TYPE_IP	0x0800
 
 struct net_dev;
 

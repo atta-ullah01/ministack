@@ -3,14 +3,11 @@
 
 #include <stdint.h>
 
-/* Scope of Internet host loopback address. see https://tools.ietf.org/html/rfc5735 */
 #define LOOPBACK_IP_ADDR "127.0.0.1"
 #define LOOPBACK_NETMASK "255.0.0.0"
 
-#define ETHER_TAP_NAME "tap0"
-/* Scope of EUI-48 Documentation Values. see https://tools.ietf.org/html/rfc7042 */
-#define ETHER_TAP_HW_ADDR "00:00:5e:00:53:01"
-/* Scope of Documentation Address Blocks (TEST-NET-1). see https://tools.ietf.org/html/rfc5731 */
+#define ETHER_TAP_NAME    "tap0"
+#define ETHER_TAP_HW_ADDR "02:00:5e:00:53:01"
 #define ETHER_TAP_IP_ADDR "192.0.2.2"
 #define ETHER_TAP_NETMASK "255.255.255.0"
 
